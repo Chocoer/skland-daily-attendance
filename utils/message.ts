@@ -1,4 +1,4 @@
-import { createSender } from 'statocysts'
+import { createNotifier } from 'statocysts'
 
 export function toArray<T>(value: T | T[]): T[] {
   return Array.isArray(value) ? value : [value]
@@ -15,15 +15,24 @@ export interface CollectOptions {
 }
 
 export interface MessageCollector {
-  // Console output only
+  // Console only (不收集到通知)
   log: (message: string) => void
   error: (message: string) => void
 
-  // Collect message for notification with optional console output
-  collect: (message: string, options?: CollectOptions) => void
+  // Notification only (不输出到控制台)
+  notify: (message: string) => void
+  notifyError: (message: string) => void
 
+  // Console + Notification (同时输出和收集)
+  info: (message: string) => void
+  infoError: (message: string) => void
+
+  // Utility
   push: () => Promise<void>
   hasError: () => boolean
+
+  /** @deprecated Use notify(), info(), or notifyError() instead */
+  collect: (message: string, options?: CollectOptions) => void
 }
 
 export function createMessageCollector(options: CreateMessageCollectorOptions): MessageCollector {
@@ -39,6 +48,29 @@ export function createMessageCollector(options: CreateMessageCollectorOptions): 
     hasError = true
   }
 
+  // Notification only methods
+  const notify = (message: string) => {
+    messages.push(message)
+  }
+
+  const notifyError = (message: string) => {
+    messages.push(message)
+    hasError = true
+  }
+
+  // Combined methods (Console + Notification)
+  const info = (message: string) => {
+    console.log(message)
+    messages.push(message)
+  }
+
+  const infoError = (message: string) => {
+    console.error(message)
+    messages.push(message)
+    hasError = true
+  }
+
+  /** @deprecated Use notify(), info(), or notifyError() instead */
   const collect = (message: string, opts: CollectOptions = {}) => {
     const { output = false, isError = false } = opts
 
@@ -60,9 +92,11 @@ export function createMessageCollector(options: CreateMessageCollectorOptions): 
     const title = '【森空岛每日签到】'
     const content = messages.join('\n\n')
     const urls = options.notificationUrls ? toArray(options.notificationUrls) : []
-    const sender = createSender(urls)
 
-    await sender.send(title, content)
+    if (urls.length > 0) {
+      const notifier = createNotifier(urls)
+      await notifier.send({ title, body: content })
+    }
 
     // Exit with error if any error occurred
     if (hasError && options.onError) {
@@ -70,5 +104,5 @@ export function createMessageCollector(options: CreateMessageCollectorOptions): 
     }
   }
 
-  return { log, error, collect, push, hasError: () => hasError } as const
+  return { log, error, notify, notifyError, info, infoError, collect, push, hasError: () => hasError } as const
 }
